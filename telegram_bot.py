@@ -1,7 +1,6 @@
-
 import os
 import requests
-from flask import Flask, request, jsonify
+from flask import Flask, jsonify, request
 
 app = Flask(__name__)
 
@@ -11,56 +10,65 @@ TV_SECRET = os.environ["TV_SECRET"]
 
 TELEGRAM_URL = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 
+
+# Brauzerdən (CORS) gələn sorğulara icazə vermək üçün
+@app.after_request
+def after_request(response):
+  response.headers.add("Access-Control-Allow-Origin", "*")
+  response.headers.add("Access-Control-Allow-Headers", "Content-Type,Authorization")
+  response.headers.add("Access-Control-Allow-Methods", "GET,PUT,POST,OPTIONS")
+  return response
+
+
 @app.route("/health", methods=["GET"])
 def health():
-    return jsonify({"status": "online"})
+  return jsonify({"status": "online"})
 
-@app.route("/webhook", methods=["POST"])
+
+@app.route("/webhook", methods=["POST", "OPTIONS"])
 def webhook():
-    data = request.get_json(silent=True) or {}
+  # Brauzerin preflight (OPTIONS) sorğusu üçün
+  if request.method == "OPTIONS":
+    return jsonify({"status": "ok"}), 200
 
-    if data.get("secret") != TV_SECRET:
-        return jsonify({"error": "Unauthorized"}), 401
+  data = request.get_json(silent=True) or {}
 
-    signal = data.get("signal", "UNKNOWN")
-    symbol = data.get("symbol", "UNKNOWN")
-    timeframe = data.get("timeframe", "M1")
-    price = data.get("price", "N/A")
-    score = data.get("score", "N/A")
-    trend = data.get("trend", "N/A")
+  if data.get("secret") != TV_SECRET:
+    return jsonify({"error": "Unauthorized"}), 401
 
-    if signal not in ("CALL", "PUT"):
-        return jsonify({"error": "Invalid signal"}), 400
+  signal = data.get("signal", "UNKNOWN")
+  symbol = data.get("symbol", "UNKNOWN")
+  timeframe = data.get("timeframe", "M1")
+  price = data.get("price", "N/A")
+  score = data.get("score", "N/A")
+  trend = data.get("trend", "N/A")
 
-    emoji = "🟢" if signal == "CALL" else "🔴"
+  if signal not in ("CALL", "PUT"):
+    return jsonify({"error": "Invalid signal"}), 400
 
-    message = (
-        f"{emoji} ICT SMC OTC SIGNAL\n\n"
-        f"Signal: {signal}\n"
-        f"Asset: {symbol}\n"
-        f"Timeframe: {timeframe}\n"
-        f"Price: {price}\n"
-        f"Score: {score}/100\n"
-        f"M15 Trend: {trend}\n\n"
-        "Status: Confirmed candle\n"
-        "Risk: Demo testing recommended"
-    )
+  emoji = "🟢" if signal == "CALL" else "🔴"
 
-    response = requests.post(
-        TELEGRAM_URL,
-        json={
-            "chat_id": CHAT_ID,
-            "text": message
-        },
-        timeout=10
-    )
+  message = (
+      f"{emoji} ICT SMC OTC SIGNAL\n\n"
+      f"Signal: {signal}\n"
+      f"Asset: {symbol}\n"
+      f"Timeframe: {timeframe}\n"
+      f"Price: {price}\n"
+      f"Score: {score}/100\n"
+      f"M15 Trend: {trend}\n\n"
+      "Status: Confirmed candle\n"
+      "Risk: Demo testing recommended"
+  )
 
-    if not response.ok:
-        return jsonify({"error": "Telegram delivery failed"}), 502
+  response = requests.post(
+      TELEGRAM_URL, json={"chat_id": CHAT_ID, "text": message}, timeout=10
+  )
 
-    return jsonify({"status": "sent"})
+  if not response.ok:
+    return jsonify({"error": "Telegram delivery failed"}), 502
+
+  return jsonify({"status": "sent"})
+
+
 if __name__ == "__main__":
-    app.run(
-        host="0.0.0.0",
-        port=int(os.environ.get("PORT", 10000))
-    )
+  app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
